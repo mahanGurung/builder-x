@@ -6,14 +6,15 @@ import { cn } from "@/lib/utils"
 const typographyVariants = cva("", {
   variants: {
     variant: {
-      h1: "text-[72px] leading-[52px] tracking-normal",
-      h2: "text-[40px] leading-[42px] tracking-normal",
-      h3: "text-[32px] leading-9 tracking-normal",
-      h4: "text-[23px] leading-7 tracking-normal",
-      h5: "text-[19px] leading-6 tracking-normal",
-      h6: "text-[16px] leading-5 tracking-normal",
-      paragraph: "text-[16px] leading-[22px] tracking-normal",
-      caption: "text-[12px] leading-4 tracking-normal",
+      h1: "text-[72px] leading-[1.1] tracking-tight",
+      h2: "text-[64px] leading-[1.1] tracking-tight",
+      h3: "text-[48px] leading-[1.1] tracking-tight",
+      h4: "text-[32px] leading-[1.2] tracking-normal",
+      h5: "text-[24px] leading-[1.2] tracking-normal",
+      h6: "text-[20px] leading-[1.3] tracking-normal",
+      p1: "text-[16px] leading-[1.3] tracking-normal",
+      p2: "text-[14px] leading-[1.4] tracking-normal",
+      caption: "text-[12px] leading-[1.4] tracking-normal",
     },
     family: {
       head: "font-head",
@@ -55,7 +56,7 @@ const typographyVariants = cva("", {
   },
 
   defaultVariants: {
-    variant: "paragraph",
+    variant: "p1",
     family: "body",
     weight: "regular",
     textColor: "default",
@@ -65,7 +66,7 @@ const typographyVariants = cva("", {
 
 interface TypographyProps
   extends React.HTMLAttributes<HTMLElement>,
-    VariantProps<typeof typographyVariants> {
+  VariantProps<typeof typographyVariants> {
   render?: React.ReactElement
 }
 
@@ -92,7 +93,7 @@ function Typography({
               ? "h5"
               : variant === "h6"
                 ? "h6"
-                : variant === "paragraph"
+                : variant === "p1" || variant === "p2"
                   ? "p"
                   : variant === "caption"
                     ? "span"

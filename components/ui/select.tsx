@@ -1,13 +1,7 @@
 "use client"
 
 import { Select as SelectPrimitive } from "@base-ui/react/select"
-import {
-  ArrowDown01Icon,
-  ArrowUp01Icon,
-  Tick02Icon,
-  UnfoldMoreIcon,
-} from "@hugeicons/core-free-icons"
-import { HugeiconsIcon } from "@hugeicons/react"
+import { Check, ChevronDown, ChevronsUpDown, ChevronUp } from "lucide-react"
 import * as React from "react"
 import { cn } from "@/lib/utils"
 
@@ -68,8 +62,7 @@ function SelectTrigger({
       {children}
       <SelectPrimitive.Icon
         render={
-          <HugeiconsIcon
-            icon={UnfoldMoreIcon}
+          <ChevronsUpDown
             strokeWidth={2}
             className="pointer-events-none size-4 text-muted-foreground"
           />
@@ -176,8 +169,7 @@ function SelectItem({
           />
         }
       >
-        <HugeiconsIcon
-          icon={Tick02Icon}
+        <Check
           strokeWidth={2}
           className="pointer-events-none"
         />
@@ -213,7 +205,7 @@ function SelectScrollUpButton({
       )}
       {...props}
     >
-      <HugeiconsIcon icon={ArrowUp01Icon} strokeWidth={2} />
+      <ChevronUp strokeWidth={2} />
     </SelectPrimitive.ScrollUpArrow>
   )
 }
@@ -232,7 +224,7 @@ function SelectScrollDownButton({
       )}
       {...props}
     >
-      <HugeiconsIcon icon={ArrowDown01Icon} strokeWidth={2} />
+      <ChevronDown strokeWidth={2} />
     </SelectPrimitive.ScrollDownArrow>
   )
 }

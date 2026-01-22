@@ -1,12 +1,7 @@
 "use client"
 
 import { Combobox as ComboboxPrimitive } from "@base-ui/react"
-import {
-  ArrowDown01Icon,
-  Cancel01Icon,
-  Tick02Icon,
-} from "@hugeicons/core-free-icons"
-import { HugeiconsIcon } from "@hugeicons/react"
+import { Check, ChevronDown, X } from "lucide-react"
 import * as React from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -35,8 +30,7 @@ function ComboboxTrigger({
       {...props}
     >
       {children}
-      <HugeiconsIcon
-        icon={ArrowDown01Icon}
+      <ChevronDown
         strokeWidth={2}
         className="pointer-events-none size-4 text-muted-foreground"
       />
@@ -52,8 +46,7 @@ function ComboboxClear({ className, ...props }: ComboboxPrimitive.Clear.Props) {
       className={cn(className)}
       {...props}
     >
-      <HugeiconsIcon
-        icon={Cancel01Icon}
+      <X
         strokeWidth={2}
         className="pointer-events-none"
       />
@@ -193,8 +186,7 @@ function ComboboxItem({
           />
         }
       >
-        <HugeiconsIcon
-          icon={Tick02Icon}
+        <Check
           strokeWidth={2}
           className="pointer-events-none"
         />
@@ -311,8 +303,7 @@ function ComboboxChip({
           className="-ml-1 opacity-50 hover:opacity-100"
           data-slot="combobox-chip-remove"
         >
-          <HugeiconsIcon
-            icon={Cancel01Icon}
+          <X
             strokeWidth={2}
             className="pointer-events-none"
           />
