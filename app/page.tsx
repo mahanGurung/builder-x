@@ -26,23 +26,54 @@ const Navbar = () => {
           </Typography>
         </Link>
         <div className="hidden items-center gap-8 md:flex">
-          <Link href="#features" className="text-sm font-medium transition-colors hover:text-primary">
+          <Typography
+            render={<Link href="#features" />}
+            variant="p2"
+            family="body"
+            weight="medium"
+            className="transition-colors hover:text-primary"
+          >
             Features
-          </Link>
-          <Link href="#how-it-works" className="text-sm font-medium transition-colors hover:text-primary">
+          </Typography>
+          <Typography
+            render={<Link href="#how-it-works" />}
+            variant="p2"
+            family="body"
+            weight="medium"
+            className="transition-colors hover:text-primary"
+          >
             How it Works
-          </Link>
-          <Link href="#leaderboard" className="text-sm font-medium transition-colors hover:text-primary">
+          </Typography>
+          <Typography
+            render={<Link href="#leaderboard" />}
+            variant="p2"
+            family="body"
+            weight="medium"
+            className="transition-colors hover:text-primary"
+          >
             Leaderboard
-          </Link>
+          </Typography>
         </div>
         <div className="flex items-center gap-4">
-          <Link href="#" className={buttonVariants({ variant: "ghost", size: "sm", className: "hidden sm:inline-flex" })}>
+          <Button
+            render={<Link href="#" />}
+            variant="ghost"
+            size="sm"
+            textVariant={'caption'}
+            className="hidden sm:inline-flex"
+          >
             Documentation
-          </Link>
-          <Link href="#" className={buttonVariants({ variant: "default", size: "lg", className: "cursor-pointer" })}>
+          </Button>
+          <Button
+            render={<Link href="#" />}
+            variant="default"
+            textWeight={'bold'}
+            size="lg"
+            textVariant={'caption'}
+            className="cursor-pointer"
+          >
             Launch App
-          </Link>
+          </Button>
         </div>
       </div>
     </nav>
@@ -279,10 +310,28 @@ const Page = () => {
           <p className="text-sm text-muted-foreground">
             Built for the Programming USDCx on Stacks Challenge. © 2026.
           </p>
-          <div className="flex gap-6 text-sm text-muted-foreground">
-            <Link href="#" className="hover:text-foreground">Twitter</Link>
-            <Link href="#" className="hover:text-foreground">Discord</Link>
-            <Link href="#" className="hover:text-foreground">GitHub</Link>
+          <div className="flex gap-6">
+            <Button
+              render={<Link href="#" />}
+              variant="link"
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Twitter
+            </Button>
+            <Button
+              render={<Link href="#" />}
+              variant="link"
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Discord
+            </Button>
+            <Button
+              render={<Link href="#" />}
+              variant="link"
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              GitHub
+            </Button>
           </div>
         </div>
       </footer>

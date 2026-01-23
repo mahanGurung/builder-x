@@ -6,15 +6,15 @@ import { cn } from "@/lib/utils"
 const typographyVariants = cva("", {
   variants: {
     variant: {
-      h1: "text-[72px] leading-[1.1] tracking-tight",
-      h2: "text-[64px] leading-[1.1] tracking-tight",
-      h3: "text-[48px] leading-[1.1] tracking-tight",
-      h4: "text-[32px] leading-[1.2] tracking-normal",
-      h5: "text-[24px] leading-[1.2] tracking-normal",
-      h6: "text-[20px] leading-[1.3] tracking-normal",
-      p1: "text-[16px] leading-[1.3] tracking-normal",
-      p2: "text-[14px] leading-[1.4] tracking-normal",
-      caption: "text-[12px] leading-[1.4] tracking-normal",
+      h1: "text-[72px] leading-[1.1] tracking-tight text-balance",
+      h2: "text-[64px] leading-[1.1] tracking-tight text-balance",
+      h3: "text-[48px] leading-[1.1] tracking-tight text-balance",
+      h4: "text-[32px] leading-[1.2] tracking-normal text-balance",
+      h5: "text-[24px] leading-[1.2] tracking-normal text-pretty",
+      h6: "text-[20px] leading-[1.3] tracking-normal text-pretty",
+      p1: "text-[16px] leading-[1.3] tracking-normal text-pretty",
+      p2: "text-[14px] leading-[1.4] tracking-normal text-pretty",
+      caption: "text-[12px] leading-[1.4] tracking-normal text-pretty",
     },
     family: {
       head: "font-head",
@@ -43,6 +43,7 @@ const typographyVariants = cva("", {
       accent: "text-accent",
       "accent-foreground": "text-accent-foreground",
       destructive: "text-destructive",
+      inherit: "",
       border: "text-border",
       input: "text-input",
       ring: "text-ring",

@@ -1,8 +1,18 @@
 "use client"
 
 import { Button as ButtonPrimitive } from "@base-ui/react/button"
+import { useRender } from "@base-ui/react/use-render"
 import { cva, type VariantProps } from "class-variance-authority"
+import React from "react"
 import { cn } from "@/lib/utils"
+import { typographyVariants } from "@/components/global/typography"
+
+type TypographyTextOptions = {
+  textVariant?: VariantProps<typeof typographyVariants>["variant"]
+  textFamily?: VariantProps<typeof typographyVariants>["family"]
+  textWeight?: VariantProps<typeof typographyVariants>["weight"]
+  textAlign?: VariantProps<typeof typographyVariants>["align"]
+}
 
 const buttonVariants = cva(
   `group/button inline-flex shrink-0 items-center justify-center rounded-none
@@ -60,15 +70,33 @@ function Button({
   className,
   variant = "default",
   size = "default",
+  textVariant,
+  textFamily,
+  textWeight,
+  textAlign,
+  render,
   ...props
-}: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
-  return (
-    <ButtonPrimitive
-      data-slot="button"
-      className={cn(buttonVariants({ variant, size, className }))}
-      {...props}
-    />
-  )
+}: ButtonPrimitive.Props &
+  VariantProps<typeof buttonVariants> &
+  TypographyTextOptions & { render?: React.ReactElement }) {
+  return useRender({
+    render: render || <button />,
+    props: {
+      ...props,
+      className: cn(
+        buttonVariants({ variant, size, className }),
+        textVariant || textFamily || textWeight || textAlign
+          ? typographyVariants({
+            variant: textVariant,
+            family: textFamily,
+            weight: textWeight,
+            align: textAlign,
+            textColor: "inherit",
+          })
+          : null
+      ),
+    },
+  })
 }
 
 export { Button, buttonVariants }
