@@ -22,10 +22,8 @@ import { Input } from "@/components/ui/input"
 import {
   Stepper,
   StepperContent,
-  StepperDescription,
-  StepperIndicator,
-  StepperItem,
-  StepperTitle,
+  StepperStep,
+  StepperTrigger,
 } from "@/components/ui/stepper"
 import { ProtocolSelector } from "@/components/bridge/protocol-selector"
 import { RewardPreview } from "@/components/bridge/reward-preview"
@@ -105,7 +103,7 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
   const [referrerCode, setReferrerCode] = useState("")
   const [selected, setSelected] = useState<Opportunity | null>(null)
   const [requestId, setRequestId] = useState<string | null>(null)
-  const [activeStep, setActiveStep] = useState(0)
+  const [activeStep, setActiveStep] = useState(1) // 1-based index
 
   const amount = useMemo(() => parseAmount(amountInput), [amountInput])
   const hasReferral = referrerCode.trim().length > 0
@@ -118,8 +116,7 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
     mutationFn: initiateBridge,
     onSuccess: (res) => {
       setRequestId(res.requestId)
-      // Automatically move to the next step (Confirm Bridge)
-      // setActiveStep(3) // Note: Controlled stepper logic might be needed
+      setActiveStep(4)
     },
   })
 
@@ -159,72 +156,95 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
   // Step Validation
   const isStep1Valid = wallet.isEthConnected && wallet.isStacksConnected
   const isStep2Valid = Boolean(selected) && amount > 0
-  const isStep3Valid = true // Review step is always valid to proceed if previous are valid
 
   const steps = [
     {
       id: "step-1",
       title: "Connect Wallets",
-      description: "Connect both Ethereum and Stacks wallets",
+      description: "Ethereum & Stacks",
     },
     {
       id: "step-2",
       title: "Bridge Details",
-      description: "Enter amount and select target protocol",
+      description: "Amount & Protocol",
     },
     {
       id: "step-3",
       title: "Review & Approve",
-      description: "Verify details and approve transaction",
+      description: "Confirm Transaction",
     },
     {
       id: "step-4",
       title: "Confirm Bridge",
-      description: "Monitor bridge progress",
+      description: "Track Progress",
     },
   ]
 
   return (
-    <div className={cn("mx-auto w-full max-w-3xl", className)}>
-      <Stepper
-        orientation="vertical"
-        defaultValue="step-1"
-        className="flex w-full flex-col gap-6"
-        value={steps[activeStep].id}
-        onValueChange={(val) => {
-          const index = steps.findIndex((s) => s.id === val)
-          if (index !== -1) setActiveStep(index)
-        }}
-      >
-        {steps.map((step, index) => (
-          <StepperItem
-            key={step.id}
-            value={step.id}
-            className="flex-col items-start gap-4 border-l-[2px] border-l-border
-              pl-6 transition-all data-[state=active]:border-l-primary
-              data-[state=completed]:border-l-primary/50"
-          >
-            <div className="flex items-center gap-4">
-              <StepperIndicator className="absolute -left-[15px] bg-background">
-                <span className="text-sm font-bold">{index + 1}</span>
-              </StepperIndicator>
-              <div className="flex flex-col">
-                <StepperTitle asChild>
-                  <Typography variant="p2" weight="bold">
-                    {step.title}
-                  </Typography>
-                </StepperTitle>
-                <StepperDescription asChild>
-                  <Typography variant="caption" textColor="muted-foreground">
-                    {step.description}
-                  </Typography>
-                </StepperDescription>
-              </div>
-            </div>
+    <div className={cn("mx-auto w-full max-w-5xl", className)}>
+      <Stepper step={activeStep} onStepChange={setActiveStep} numberOfSteps={4}>
+        <div className="grid gap-8 lg:grid-cols-[280px_1fr]">
+          {/* Sidebar Triggers */}
+          <nav className="flex flex-col gap-2">
+            {steps.map((step, i) => {
+              const stepNum = i + 1
+              const isActive = activeStep === stepNum
+              const isCompleted = activeStep > stepNum
 
-            <StepperContent value={step.id} className="w-full pt-4 pb-8">
+              return (
+                <StepperTrigger
+                  key={step.id}
+                  step={stepNum}
+                  className={cn(
+                    `flex w-full items-center gap-4 rounded-lg border p-4
+                    text-left transition-colors`,
+                    isActive
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:bg-muted/50",
+                    isCompleted && "border-primary/50 text-muted-foreground"
+                  )}
+                >
+                  <div
+                    className={cn(
+                      `flex h-8 w-8 shrink-0 items-center justify-center
+                      rounded-full border text-sm font-bold`,
+                      isActive
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : `border-muted-foreground/30 bg-background
+                          text-muted-foreground`,
+                      isCompleted &&
+                      "border-primary/50 bg-primary/20 text-primary"
+                    )}
+                  >
+                    {isCompleted ? (
+                      <CheckCircle2 className="h-5 w-5" />
+                    ) : (
+                      stepNum
+                    )}
+                  </div>
+                  <div className="flex flex-col">
+                    <span
+                      className={cn(
+                        "text-sm font-medium",
+                        isActive ? "text-foreground" : "text-muted-foreground"
+                      )}
+                    >
+                      {step.title}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {step.description}
+                    </span>
+                  </div>
+                </StepperTrigger>
+              )
+            })}
+          </nav>
+
+          {/* Content Area */}
+          <div className="flex-1">
+            <StepperContent className="min-h-100">
               {/* Step 1: Connect Wallets */}
-              {index === 0 && (
+              <StepperStep step={1}>
                 <div className="space-y-6">
                   <div
                     className="rounded-lg border border-border bg-card/50 p-6"
@@ -244,10 +264,8 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
                   </div>
                   <div className="flex justify-end">
                     <Button
-                      onClick={() => setActiveStep(1)}
-                      // disabled={!isStep1Valid}
-                      // Allow proceeding for demo purposes even if not connected, but show warning
-                      // Ideally should be disabled: disabled={!isStep1Valid}
+                      onClick={() => setActiveStep(2)}
+                      disabled={!isStep1Valid}
                     >
                       Continue
                       <ChevronRight className="ml-2 h-4 w-4" />
@@ -259,14 +277,14 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
                       textColor="muted-foreground"
                       className="block text-right"
                     >
-                      Demo mode enabled if not connected
+                      Connect both wallets to proceed
                     </Typography>
                   )}
                 </div>
-              )}
+              </StepperStep>
 
               {/* Step 2: Bridge Details */}
-              {index === 1 && (
+              <StepperStep step={2}>
                 <div className="space-y-6">
                   <div
                     className="grid gap-6 rounded-lg border border-border
@@ -349,11 +367,11 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
                   </div>
 
                   <div className="flex justify-between">
-                    <Button variant="outline" onClick={() => setActiveStep(0)}>
+                    <Button variant="outline" onClick={() => setActiveStep(1)}>
                       Back
                     </Button>
                     <Button
-                      onClick={() => setActiveStep(2)}
+                      onClick={() => setActiveStep(3)}
                       disabled={!isStep2Valid}
                     >
                       Continue
@@ -361,10 +379,10 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
                     </Button>
                   </div>
                 </div>
-              )}
+              </StepperStep>
 
               {/* Step 3: Review & Approve */}
-              {index === 2 && (
+              <StepperStep step={3}>
                 <div className="space-y-6">
                   <div className="grid gap-6 md:grid-cols-2">
                     <div
@@ -427,7 +445,7 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
                   </div>
 
                   <div className="flex justify-between">
-                    <Button variant="outline" onClick={() => setActiveStep(1)}>
+                    <Button variant="outline" onClick={() => setActiveStep(2)}>
                       Back
                     </Button>
                     <Button
@@ -442,7 +460,6 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
                           ethAddress: effectiveEthAddress,
                           stacksAddress: effectiveStacksAddress,
                         })
-                        setActiveStep(3)
                       }}
                       disabled={mutation.isPending}
                       size="lg"
@@ -469,10 +486,10 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
                     </Typography>
                   )}
                 </div>
-              )}
+              </StepperStep>
 
               {/* Step 4: Confirm Bridge */}
-              {index === 3 && (
+              <StepperStep step={4}>
                 <div className="space-y-6">
                   <div
                     className="rounded-lg border border-border bg-card/50 p-6"
@@ -557,7 +574,7 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
                       variant="outline"
                       onClick={() => {
                         // Reset form
-                        setActiveStep(0)
+                        setActiveStep(1)
                         setRequestId(null)
                         setAmountInput("1000")
                       }}
@@ -566,10 +583,10 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
                     </Button>
                   </div>
                 </div>
-              )}
+              </StepperStep>
             </StepperContent>
-          </StepperItem>
-        ))}
+          </div>
+        </div>
       </Stepper>
     </div>
   )

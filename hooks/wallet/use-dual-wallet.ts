@@ -1,8 +1,12 @@
 "use client"
 
 import { useAccount, useConnect, useDisconnect } from "wagmi"
-import { useContext } from "react"
-import { WalletContext } from "@/lib/providers/wallet-provider"
+import {
+  useIsStacksConnected,
+  useIsStacksConnecting,
+  useStacksWalletActions,
+  useStxAddress,
+} from "@/lib/providers/wallet-provider"
 
 export type DualWalletState = {
   // Ethereum
@@ -30,14 +34,11 @@ export function useDualWallet(): DualWalletState {
   const { connect, connectors, isPending: isEthConnecting } = useConnect()
   const { disconnect: wagmiDisconnect } = useDisconnect()
 
-  // Stacks wallet via context
-  const walletContext = useContext(WalletContext)
-
-  if (!walletContext) {
-    throw new Error("useDualWallet must be used within WalletProvider")
-  }
-
-  const { stacks, connectStacks, disconnectStacks } = walletContext
+  // Stacks wallet via Zustand store
+  const stxAddress = useStxAddress()
+  const isStacksConnected = useIsStacksConnected()
+  const isStacksConnecting = useIsStacksConnecting()
+  const { connectWallet, disconnectWallet } = useStacksWalletActions()
 
   const connectEth = () => {
     const injectedConnector = connectors.find((c) => c.id === "injected")
@@ -59,14 +60,14 @@ export function useDualWallet(): DualWalletState {
     disconnectEth,
 
     // Stacks
-    stacksAddress: stacks.address,
-    isStacksConnected: stacks.isConnected,
-    isStacksConnecting: stacks.isConnecting,
-    connectStacks,
-    disconnectStacks,
+    stacksAddress: stxAddress || null,
+    isStacksConnected,
+    isStacksConnecting,
+    connectStacks: connectWallet,
+    disconnectStacks: disconnectWallet,
 
     // Combined
-    areBothConnected: isEthConnected && stacks.isConnected,
-    isAnyConnecting: isEthConnecting || stacks.isConnecting,
+    areBothConnected: isEthConnected && isStacksConnected,
+    isAnyConnecting: isEthConnecting || isStacksConnecting,
   }
 }
