@@ -279,6 +279,15 @@ Internal dashboard for monitoring platform health and managing protocols.
 - State management: Use React Context for global state (wallet, user data)
 - Error handling: Try-catch with user-friendly messages
 - Wallet integration: MetaMask for Ethereum, Leather for Stacks
+- **Bridge Page Architecture**: Separate dedicated bridge page with vertical stepper layout using 4-step workflow:
+  - **Step 1: Connect Wallets** - Connect MetaMask (Ethereum) and Leather (Stacks) wallets with balance display
+  - **Step 2: Bridge Details** - Enter USDC amount, select target protocol from opportunities, toggle auto-deploy
+  - **Step 3: Review & Approve** - Review rewards breakdown (base + bonuses + multiplier), approve USDC spending
+  - **Step 4: Confirm Bridge** - Monitor attestation flow, display transaction hashes, success confirmation
+- Stepper component: Vertical orientation with card-based USDC bridge form as main content
+- Bridge page uses `@diceui/stepper` component for clear 4-step user progression
+- Each step displays only relevant input fields and information
+- Real-time rewards preview displayed in final review step
 
 ### Key Files
 
@@ -291,6 +300,8 @@ Internal dashboard for monitoring platform health and managing protocols.
 - `src/components/EnhancedBridgeForm.tsx` - Bridge interface
 - `src/components/RewardsDashboard.tsx` - User dashboard
 - `src/components/Leaderboard.tsx` - Rankings display
+- `src/app/bridge/page.tsx` - Dedicated bridge page with stepper workflow
+- `src/components/ui/stepper.tsx` - Vertical stepper component for bridge steps
 
 ### Non-Goals
 

@@ -1,0 +1,86 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id            String     @id @default(cuid())
+  walletAddress String     @unique
+  totalBridged  Float      @default(0)
+  rank          Int        @default(0)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  
+  bridges       Bridge[]
+  rewards       Reward[]
+  referredBy    Referral[] @relation("Referee")
+  referrals     Referral[] @relation("Referrer")
+  
+  @@index([walletAddress])
+  @@index([rank])
+}
+
+model Bridge {
+  id             String   @id @default(cuid())
+  userId         String
+  amount         Float
+  timestamp      DateTime @default(now())
+  ethTxHash      String   @unique
+  autoDeployFlag Boolean  @default(false)
+  targetProtocol String?
+  
+  user           User     @relation(fields: [userId], references: [id])
+  
+  @@index([userId])
+  @@index([timestamp])
+  @@index([ethTxHash])
+}
+
+model Reward {
+  id              String   @id @default(cuid())
+  userId          String
+  amount          Float
+  type            String   // base, bonus, referral
+  vestingStart    DateTime @default(now())
+  vestingEnd      DateTime
+  claimedAmount   Float    @default(0)
+  createdAt       DateTime @default(now())
+  
+  user            User     @relation(fields: [userId], references: [id])
+  
+  @@index([userId])
+  @@index([vestingEnd])
+}
+
+model Protocol {
+  id         String   @id @default(cuid())
+  name       String   @unique
+  chain      String   // ethereum or stacks
+  currentApy Float
+  riskScore  Int      // 1-10
+  tvl        Float
+  updatedAt  DateTime @updatedAt
+  
+  @@index([chain])
+}
+
+model Referral {
+  id          String   @id @default(cuid())
+  referrerId  String
+  refereeId   String
+  createdAt   DateTime @default(now())
+  
+  referrer    User     @relation("Referrer", fields: [referrerId], references: [id])
+  referee     User     @relation("Referee", fields: [refereeId], references: [id])
+  
+  @@unique([referrerId, refereeId])
+  @@index([referrerId])
+  @@index([refereeId])
+}

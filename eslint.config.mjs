@@ -1,11 +1,11 @@
+import nextPlugin from "@next/eslint-plugin-next"
 import tsParser from "@typescript-eslint/parser"
-import { defineConfig } from "eslint/config"
+import { createTypeScriptImportResolver } from "eslint-import-resolver-typescript"
 import checkFilePlugin from "eslint-plugin-check-file"
 import importPlugin from "eslint-plugin-import-x"
-import { createTypeScriptImportResolver } from "eslint-import-resolver-typescript"
-import nextPlugin from "@next/eslint-plugin-next"
 import reactPlugin from "eslint-plugin-react"
 import reactHooksPlugin from "eslint-plugin-react-hooks"
+import { defineConfig } from "eslint/config"
 
 const baseSetting = {
   files: ["**/*.{js,jsx,ts,tsx}"],
@@ -54,13 +54,7 @@ const importConvention = {
       {
         zones: [
           {
-            target: [
-              "./components",
-              "./hooks",
-              "./lib",
-              "./types",
-              "./utils",
-            ],
+            target: ["./components", "./hooks", "./lib", "./types", "./utils"],
             from: ["./features", "./app"],
           },
         ],
@@ -102,11 +96,21 @@ const nextConvention = {
   settings: {
     react: {
       version: "detect",
-    }
-  }
+    },
+  },
+}
+
+const globalIgnores = {
+  ignores: [
+    ".next/**",
+    "node_modules/**",
+    "lib/generated/**",
+    "prisma/migrations/**",
+  ],
 }
 
 export default defineConfig([
+  globalIgnores,
   baseSetting,
   fileConvention,
   importConvention,

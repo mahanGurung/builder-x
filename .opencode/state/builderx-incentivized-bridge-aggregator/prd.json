@@ -14,7 +14,7 @@
         "All foreign keys properly reference parent tables",
         "Indexes on frequently queried fields (user wallet, timestamp)"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "api-1",
@@ -30,7 +30,7 @@
         "Service handles API failures gracefully with fallback data",
         "Response time under 500ms"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "ui-1",
@@ -47,7 +47,7 @@
         "Loading states during data fetch",
         "Mobile responsive layout"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "smart-contract-1",
@@ -65,7 +65,7 @@
         "get-global-stats returns TVL, total users, total rewards distributed",
         "Emit events for bridge registration"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "smart-contract-2",
@@ -282,7 +282,16 @@
       "Smart contracts: Follow Clarity best practices, use descriptive function names",
       "State management: Use React Context for global state (wallet, user data)",
       "Error handling: Try-catch with user-friendly messages",
-      "Wallet integration: MetaMask for Ethereum, Leather for Stacks"
+      "Wallet integration: MetaMask for Ethereum, Leather for Stacks",
+      "Bridge Page Architecture: Separate dedicated bridge page with vertical stepper layout using 4-step workflow",
+      "Step 1 - Connect Wallets: Connect MetaMask (Ethereum) and Leather (Stacks) wallets with balance display",
+      "Step 2 - Bridge Details: Enter USDC amount, select target protocol from opportunities, toggle auto-deploy",
+      "Step 3 - Review & Approve: Review rewards breakdown (base + bonuses + multiplier), approve USDC spending",
+      "Step 4 - Confirm Bridge: Monitor attestation flow, display transaction hashes, success confirmation",
+      "Stepper component: Vertical orientation with card-based USDC bridge form as main content",
+      "Bridge page uses @diceui/stepper component for clear 4-step user progression",
+      "Each step displays only relevant input fields and information",
+      "Real-time rewards preview displayed in final review step"
     ],
     "keyFiles": [
       "contracts/liquidity-rewards.clar",
@@ -293,7 +302,9 @@
       "src/components/OpportunityScanner.tsx",
       "src/components/EnhancedBridgeForm.tsx",
       "src/components/RewardsDashboard.tsx",
-      "src/components/Leaderboard.tsx"
+      "src/components/Leaderboard.tsx",
+      "src/app/bridge/page.tsx",
+      "src/components/ui/stepper.tsx"
     ],
     "nonGoals": [
       "OAuth/social login (wallet-only authentication)",

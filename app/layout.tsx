@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { Sora, Syne } from "next/font/google"
+import { Providers } from "./providers"
 
 import "./globals.css"
 
@@ -22,7 +23,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${syne.variable} ${sora.variable}`}>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   )
 }
