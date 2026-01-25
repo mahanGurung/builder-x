@@ -1,32 +1,12 @@
-import { NextConfig } from 'next'
+import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  images: {
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: 'avatars.githubusercontent.com',
-        port: '',
-        pathname: '**',
-      },
-      {
-        protocol: 'https',
-        hostname: 'cdn.stamp.fyi',
-        port: '',
-        pathname: '**',
-      },
-    ],
-  },
-
+  reactStrictMode: true,
   
-  experimental: { turbopack: true } as any, // cast entire object
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      config.externals = config.externals ?? []
-      config.externals.push('@prisma/client')
-    }
-    return config
-  },
-}
+  // Empty Turbopack config to silence the warning
+  turbopack: {},
+  
+  serverExternalPackages: ['ses', '@stacks/encryption'],
+};
 
-export default nextConfig
+export default nextConfig;
