@@ -12,15 +12,7 @@ import { sepolia } from "wagmi/chains"
 import { injected } from "wagmi/connectors"
 import { create } from "zustand"
 import type { ReactNode } from "react"
-
-// ============ Wagmi Config (Ethereum) ============
-const wagmiConfig = createConfig({
-  chains: [sepolia],
-  connectors: [injected()],
-  transports: {
-    [sepolia.id]: http(),
-  },
-})
+import { useState } from "react"
 
 const queryClient = new QueryClient()
 
@@ -81,9 +73,22 @@ export const useIsStacksConnecting = () =>
 
 // ============ Combined Wallet Provider ============
 export function WalletProvider({ children }: { children: ReactNode }) {
+  const [wagmiConfig] = useState(() =>
+    createConfig({
+      chains: [sepolia],
+      connectors: [injected()],
+      transports: {
+        [sepolia.id]: http(),
+      },
+      ssr: true,
+    })
+  )
+
   return (
     <WagmiProvider config={wagmiConfig}>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        {children}
+      </QueryClientProvider>
     </WagmiProvider>
   )
 }

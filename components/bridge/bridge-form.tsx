@@ -194,7 +194,7 @@ export function BridgeForm({ className }: { className?: string }) {
 
             <ProtocolSelector
               value={selected?.name ?? null}
-              onValueChange={(o: Opportunity) => setSelected(o)}
+              onValueChange={(o: Opportunity | null) => setSelected(o)}
             />
           </div>
 

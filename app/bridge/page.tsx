@@ -1,10 +1,13 @@
-import { EnhancedBridgeForm } from "@/components/bridge/enhanced-bridge-form"
 import { Typography } from "@/components/global/typography"
+import BridgeFormLoader from "@/components/bridge/bridge-form-loader" // Import the new loader component
 
 export const metadata = {
   title: "Bridge USDC | BuilderX",
   description: "Bridge USDC from Ethereum to Stacks and earn rewards.",
 }
+
+export const dynamic = 'force-dynamic'
+export const revalidate = 0;
 
 export default function BridgePage() {
   return (
@@ -31,7 +34,7 @@ export default function BridgePage() {
         </Typography>
       </div>
 
-      <EnhancedBridgeForm />
+      <BridgeFormLoader />
     </div>
   )
 }

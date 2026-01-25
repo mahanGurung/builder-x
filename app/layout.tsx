@@ -1,8 +1,8 @@
 import type { Metadata } from "next"
 import { Sora, Syne } from "next/font/google"
-import { Navbar } from "@/components/global/navbar"
+import { Navbar } from "@/components/global/navbar" // Re-add Navbar import
 
-import { Providers } from "./providers"
+import { Providers } from "./providers" // Re-add Providers import
 
 import "./globals.css"
 
@@ -17,6 +17,8 @@ export const metadata: Metadata = {
   title: "Builder-x",
   description: "Ethereum → Stacks liquidity",
 }
+
+export const dynamic = 'force-dynamic'
 
 export default function RootLayout({
   children,

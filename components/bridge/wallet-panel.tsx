@@ -7,6 +7,7 @@ import {
   Loader2,
   Wallet,
 } from "lucide-react"
+import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Typography } from "@/components/global/typography"
@@ -156,6 +157,20 @@ export function WalletPanel({
   onDisconnectStacks,
   className,
 }: WalletPanelProps) {
+  const [isMounted, setIsMounted] = useState(false)
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => setIsMounted(true), [])
+
+  if (!isMounted) {
+    return (
+      <div className={cn("space-y-3", className)}>
+        <div className="flex items-center justify-center p-8">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      </div>
+    )
+  }
+
   const bothConnected = isEthConnected && isStacksConnected
 
   return (

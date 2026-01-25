@@ -15,6 +15,8 @@ import { Separator } from "@/components/ui/separator"
 import { Typography } from "@/components/global/typography"
 import { OpportunityScanner } from "@/components/opportunity/opportunity-scanner"
 
+export const dynamic = 'force-dynamic'
+
 export default function Page() {
   return (
     <div className="flex min-h-screen flex-col">

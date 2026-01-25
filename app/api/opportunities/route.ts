@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { apyScannerService } from "@/lib/services/apy-scanner"
+import { getApyScannerService } from "@/lib/services/apy-scanner"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -8,6 +8,7 @@ export async function GET() {
   const startTime = Date.now()
 
   try {
+    const apyScannerService = getApyScannerService();
     // Initialize service if not already done (seeds protocols)
     await apyScannerService.initialize()
 

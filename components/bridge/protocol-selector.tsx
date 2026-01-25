@@ -15,7 +15,7 @@ import { Typography } from "@/components/global/typography"
 
 type ProtocolSelectorProps = {
   value: string | null
-  onValueChange: (opportunity: Opportunity) => void
+  onValueChange: (opportunity: Opportunity | null) => void
 }
 
 async function fetchOpportunities(): Promise<Opportunity[]> {
@@ -40,12 +40,7 @@ export function ProtocolSelector({
     return [...data].sort((a, b) => (b.totalApy ?? 0) - (a.totalApy ?? 0))
   }, [data])
 
-  // Default to highest APY once loaded
-  useEffect(() => {
-    if (value) return
-    if (!opportunities.length) return
-    onValueChange(opportunities[0])
-  }, [value, opportunities, onValueChange])
+
 
   const selected = opportunities.find((o) => o.name === value) || null
 
@@ -56,21 +51,38 @@ export function ProtocolSelector({
       </Typography>
 
       <Select
-        value={value ?? undefined}
+        value={value ?? ""} // Use "" for null to represent "Bridge" option
         onValueChange={(nextName) => {
-          const next = opportunities.find((o) => o.name === nextName)
-          if (next) onValueChange(next)
+          if (nextName === "") {
+            onValueChange(null);
+          } else {
+            const next = opportunities.find((o) => o.name === nextName)
+            if (next) onValueChange(next)
+          }
         }}
         disabled={isLoading || opportunities.length === 0}
       >
         <SelectTrigger className="w-full">
           <SelectValue
             placeholder={
-              isLoading ? "Loading protocols..." : "Select a protocol"
+              isLoading ? "Loading protocols..." : "bridge protocol"
             }
           />
         </SelectTrigger>
         <SelectContent>
+          <SelectItem value="">
+            <span className="flex flex-1 items-center justify-between gap-2">
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate">Bridge</span>
+                <span className="text-[11px] text-muted-foreground">
+                  Direct transfer without specific protocol
+                </span>
+              </span>
+              <span className="flex shrink-0 items-center gap-2">
+                <Shield className="h-3.5 w-3.5 text-muted-foreground" />
+              </span>
+            </span>
+          </SelectItem>
           {opportunities.map((o) => (
             <SelectItem key={o.id} value={o.name}>
               <span className="flex flex-1 items-center justify-between gap-2">

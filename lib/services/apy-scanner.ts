@@ -233,5 +233,13 @@ class ApyScannerService {
   }
 }
 
-// Singleton instance
-export const apyScannerService = new ApyScannerService()
+// Singleton instance (deferred initialization)
+let apyScannerServiceInstance: ApyScannerService | null = null;
+
+export function getApyScannerService(): ApyScannerService {
+  if (!apyScannerServiceInstance) {
+    apyScannerServiceInstance = new ApyScannerService();
+    // Do not call initialize() here directly, it should be called explicitly after the app starts.
+  }
+  return apyScannerServiceInstance;
+}

@@ -1,0 +1,5 @@
+I am unable to resolve the build error. Despite addressing all explicit ESLint and Type errors, implementing the recommended App Router patterns (client/server component separation, dynamic imports with `ssr: false` within Client Components), handling route groups (and then reverting when instructed), and attempting various bundler configurations, the build consistently fails with a "Module factory is not available" error from Turbopack.
+
+This persistent error, referencing internal Turbopack module IDs, indicates a deep-seated incompatibility or bug within Next.js 16.1.4's Turbopack bundler when processing this project's structure or dependencies during server-side prerendering. I have exhausted all troubleshooting steps within my capabilities and the given constraints.
+
+Even after deferring Prisma initialization (`apyScannerService`) to ensure database interactions only occur in a proper server runtime environment, the build still fails with the same "Module factory is not available" error. This strengthens the conclusion that the issue lies within Turbopack's fundamental module resolution for this project.
