@@ -17,6 +17,8 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+
+  
   experimental: { turbopack: true } as any, // cast entire object
   webpack: (config, { isServer }) => {
     if (!isServer) {
