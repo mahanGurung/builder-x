@@ -1,9 +1,10 @@
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3"
 
-import { PrismaClient } from "./generated/prisma/client"
+import { PrismaClient } from './generated/prisma'
 
+// Create a singleton on dev to avoid multiple instances during hot reload
 const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined
+  prisma?: PrismaClient
 }
 
 function createPrismaClient() {
@@ -16,6 +17,10 @@ function createPrismaClient() {
   })
 }
 
+// Use existing instance or create a new one
 export const prisma = globalForPrisma.prisma ?? createPrismaClient()
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma
+// Only set global in non-production for hot reloads
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.prisma = prisma
+}

@@ -1,5 +1,12 @@
 packages:
   - .
+
 ignoredBuiltDependencies:
+  - '@prisma/engines'
+  - '@reown/appkit'
+  - better-sqlite3
+  - msw
+  - prisma
+  - secp256k1
   - sharp
   - unrs-resolver

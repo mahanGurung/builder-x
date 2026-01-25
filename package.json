@@ -5,7 +5,7 @@
   "scripts": {
     "preinstall": "npx only-allow pnpm || exit 1",
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
     "prepare": "husky",
@@ -20,6 +20,8 @@
     "@base-ui/react": "^1.1.0",
     "@prisma/adapter-better-sqlite3": "^7.3.0",
     "@prisma/client": "^7.3.0",
+    "@prisma/client-runtime-utils": "^7.3.0",
+    "@prisma/engine-core": "^4.13.0",
     "@radix-ui/react-direction": "^1.1.1",
     "@radix-ui/react-slot": "^1.2.4",
     "@scure/base": "^2.0.0",
