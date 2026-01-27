@@ -1,3 +1,5 @@
+"use client"
+
 import * as P from 'micro-packed';
 import { createAddress, addressToString, AddressVersion, StacksWireType } from '@stacks/transactions';
 import { hex } from '@scure/base';

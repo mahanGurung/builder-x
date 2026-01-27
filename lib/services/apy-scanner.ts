@@ -1,4 +1,3 @@
-import { prisma } from "@/lib/db"
 import type { Protocol } from "@/lib/generated/prisma/client"
 
 export type Opportunity = Protocol & {
@@ -80,6 +79,8 @@ class ApyScannerService {
 
   private async seedProtocols() {
     try {
+      // Lazy-load prisma to avoid bundling it client-side
+      const { prisma } = await import("@/lib/db")
       const allProtocols = [...ETHEREUM_PROTOCOLS, ...STACKS_PROTOCOLS]
 
       for (const protocol of allProtocols) {
@@ -120,6 +121,9 @@ class ApyScannerService {
   async updateProtocolData() {
     try {
       const startTime = Date.now()
+
+      // Lazy-load prisma to avoid bundling it client-side
+      const { prisma } = await import("@/lib/db")
 
       // Fetch rates from both chains in parallel
       const [ethereumRates, stacksRates] = await Promise.all([
@@ -187,6 +191,9 @@ class ApyScannerService {
 
   async getOpportunities(): Promise<Opportunity[]> {
     try {
+      // Lazy-load prisma to avoid bundling it client-side
+      const { prisma } = await import("@/lib/db")
+
       const protocols = await prisma.protocol.findMany({
         orderBy: { currentApy: "desc" },
       })
@@ -234,12 +241,12 @@ class ApyScannerService {
 }
 
 // Singleton instance (deferred initialization)
-let apyScannerServiceInstance: ApyScannerService | null = null;
+let apyScannerServiceInstance: ApyScannerService | null = null
 
 export function getApyScannerService(): ApyScannerService {
   if (!apyScannerServiceInstance) {
-    apyScannerServiceInstance = new ApyScannerService();
+    apyScannerServiceInstance = new ApyScannerService()
     // Do not call initialize() here directly, it should be called explicitly after the app starts.
   }
-  return apyScannerServiceInstance;
+  return apyScannerServiceInstance
 }
