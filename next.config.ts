@@ -24,17 +24,13 @@ const nextConfig: NextConfig = {
     '@prisma/engine-core',
     'prisma',
   ],
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      config.resolve.fallback = {
-        ...config.resolve.fallback,
-        fs: false,
-        net: false,
-        tls: false,
-      };
-    }
-    return config;
-  }
+  turbopack: {
+    resolveAlias: {
+      fs: { resolution: 'empty' },
+      net: { resolution: 'empty' },
+      tls: { resolution: 'empty' },
+    },
+  },
 };
 
 export default nextConfig;

@@ -256,6 +256,7 @@ export function BridgeForm({ className }: { className?: string }) {
 
                 mutation.mutate({
                   amount,
+                  mode: "fast",
                   targetProtocol: selected.name,
                   autoDeploy,
                   referrerCode: hasReferral ? referrerCode.trim() : undefined,

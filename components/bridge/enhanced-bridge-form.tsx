@@ -1,6 +1,7 @@
 "use client"
 
 import { useMutation, useQuery } from "@tanstack/react-query"
+import * as P from 'micro-packed'
 import {
   CheckCircle2,
   ChevronRight,
@@ -20,12 +21,14 @@ import type {
   BridgeInitiateRequest,
   BridgeInitiateResponse,
   BridgeStatusResponse,
+  UsdcDepositStatus,
 } from "@/types/bridge"
 import type { Opportunity } from "@/types/opportunity"
 import { ERC20_ABI, X_RESERVE_ABI } from "@/lib/abis"
 import { bytes32FromBytes, remoteRecipientCoder } from "@/lib/bridge-utils"
 import { cn } from "@/lib/utils"
 import { useDualWallet } from "@/hooks/wallet/use-dual-wallet"
+import { useGiverRegistration } from "@/hooks/use-giver-registration"
 import { Button } from "@/components/ui/button"
 import { Typography } from "@/components/global/typography"
 import { Input } from "@/components/ui/input"
@@ -43,6 +46,10 @@ const DEMO_ETH_ADDRESS = "0x0A5728c5953634f9b9F132843bdE1B593Ce174Bb"
 const DEMO_STACKS_ADDRESS = "ST1M33KB90FAQYD26MHPQGJ13HEGKFYWNAQMCKEBR"
 const X_RESERVE_CONTRACT = "0x008888878f94C0d87defdf0B07f46B93C1934442"
 const ETH_USDC_CONTRACT = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"
+// The vault contract name "walletContract" is 14 chars — exceeds the 10-char limit of
+// Circle's xReserve bytes32 format. Use the operator's standard address instead.
+// Circle mints USDCx to this address; the Rust backend distributes from the vault.
+const VAULT_OPERATOR_STACKS_ADDRESS = "ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM"
 
 function parseAmount(v: string) {
   const cleaned = v.replace(/,/g, "").trim()
@@ -57,10 +64,18 @@ async function initiateBridge(payload: BridgeInitiateRequest) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
   })
-
   const json = (await res.json()) as BridgeInitiateResponse & { error?: string }
   if (!res.ok) throw new Error(json.error || "Bridge initiation failed")
   return json
+}
+
+async function fetchDepositStatus(txHash: string): Promise<UsdcDepositStatus> {
+  const res = await fetch(
+    `/api/bridge/deposit-status?txHash=${txHash}&network=testnet`,
+    { cache: "no-store" }
+  )
+  if (!res.ok) throw new Error("Status fetch failed")
+  return res.json()
 }
 
 async function fetchStatus(requestId: string) {
@@ -109,36 +124,44 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
   const wallet = useDualWallet()
   const { address: ethAddress } = useAccount()
 
-  // State
+  // Core state
   const [amountInput, setAmountInput] = useState("10")
   const [autoDeploy, setAutoDeploy] = useState(true)
   const [referrerCode, setReferrerCode] = useState("")
   const [selected, setSelected] = useState<Opportunity | null>(null)
   const [requestId, setRequestId] = useState<string | null>(null)
-  const [activeStep, setActiveStep] = useState(1) // 1-based index
-  const [depositInitiated, setDepositInitiated] = useState(false) // New state variable
-  const [simpleBridgeCompleted, setSimpleBridgeCompleted] = useState(false) // New state for simple bridge completion
-  const [depositTxHash, setDepositTxHash] = useState<`0x${string}` | undefined>(undefined);
+  const [activeStep, setActiveStep] = useState(1)
+  const [depositInitiated, setDepositInitiated] = useState(false)
+  const [depositTxHash, setDepositTxHash] = useState<`0x${string}` | undefined>(undefined)
+  const [depositError, setDepositError] = useState<string | null>(null)
   const [isMounted, setIsMounted] = useState(false)
+
+  // Bridge mode + address selection
+  const [bridgeMode, setBridgeMode] = useState<"fast" | "simple">("fast")
+  const [stacksAddressMode, setStacksAddressMode] = useState<"wallet" | "custom">("wallet")
+  const [customStacksAddress, setCustomStacksAddress] = useState("")
+  const [fastBridgeInitiated, setFastBridgeInitiated] = useState(false)
+
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMounted(true)
   }, [])
 
-  // Wagmi hooks for balance
+  // Balances
   const { data: usdcBalanceData } = useReadContract({
     address: ETH_USDC_CONTRACT,
     abi: ERC20_ABI,
     functionName: "balanceOf",
     args: [ethAddress!],
-    query: {
-      enabled: !!ethAddress,
-    },
+    query: { enabled: !!ethAddress },
   })
   const { data: ethBalanceData } = useBalance({ address: ethAddress })
 
   const usdcBalance = useMemo(
     () => (usdcBalanceData ? Number(usdcBalanceData) / 1e6 : 0),
+    [usdcBalanceData]
+  )
+  const usdcBalanceBigInt = useMemo(
+    () => (usdcBalanceData as bigint | undefined) ?? undefined,
     [usdcBalanceData]
   )
   const ethBalance = useMemo(
@@ -151,16 +174,54 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
 
   const amount = useMemo(() => parseAmount(amountInput), [amountInput])
   const hasReferral = referrerCode.trim().length > 0
+  const amountMicroUsdc = useMemo(() => BigInt(Math.round(amount * 1e6)), [amount])
 
+  // Registration hook — passes USDC balance for fast bridge fee check
+  const { insufficientFastBridgeFunds } = useGiverRegistration(
+    amountMicroUsdc,
+    usdcBalanceBigInt
+  )
+
+  // Effective addresses
   const effectiveEthAddress = wallet.ethAddress || DEMO_ETH_ADDRESS
-  const effectiveStacksAddress = wallet.stacksAddress || DEMO_STACKS_ADDRESS
+  const userStacksRecipient =
+    stacksAddressMode === "wallet"
+      ? wallet.stacksAddress || DEMO_STACKS_ADDRESS
+      : customStacksAddress
+
+  // Fast Bridge: USDCx minted to vault operator's standard address; backend distributes to user
+  // Simple Bridge: USDCx minted directly to user's Stacks address by Circle
+  const effectiveStacksAddress =
+    bridgeMode === "fast" ? VAULT_OPERATOR_STACKS_ADDRESS : userStacksRecipient
+
+  const isStacksRecipientValid =
+    stacksAddressMode === "wallet"
+      ? wallet.isStacksConnected
+      : /^S[TP][A-Z0-9]{38,}$/.test(customStacksAddress)
+
+  // USDCx balance on Stacks for the recipient address
+  const stacksUsdcxQuery = useQuery({
+    queryKey: ["stacks-usdcx-balance", userStacksRecipient],
+    queryFn: async () => {
+      const res = await fetch(
+        `https://api.testnet.hiro.so/extended/v1/address/${userStacksRecipient}/balances`
+      )
+      if (!res.ok) return 0
+      const data = await res.json()
+      const tokens: Record<string, { balance: string }> = data.fungible_tokens || {}
+      const key = Object.keys(tokens).find((k) => k.toLowerCase().includes("usdcx"))
+      return key ? Number(tokens[key].balance) / 1e6 : 0
+    },
+    enabled: Boolean(userStacksRecipient) && isStacksRecipientValid,
+    refetchInterval: 30_000,
+  })
+  const stacksUsdcxBalance = stacksUsdcxQuery.data ?? null
 
   // Mutations
   const mutation = useMutation({
     mutationFn: initiateBridge,
     onSuccess: (res) => {
       setRequestId(res.requestId)
-      setActiveStep(4)
     },
   })
 
@@ -170,201 +231,230 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
     data: approveTxHash,
   } = useWriteContract()
 
-  const { isLoading: isConfirmingApproval, isSuccess: isApprovalSuccess, isError: isApprovalError } = useWaitForTransactionReceipt({
+  const {
+    isLoading: isConfirmingApproval,
+    isSuccess: isApprovalSuccess,
+    isError: isApprovalError,
+  } = useWaitForTransactionReceipt({
     hash: approveTxHash,
-    query: {
-      enabled: Boolean(approveTxHash),
-    },
-  });
+    query: { enabled: Boolean(approveTxHash) },
+  })
 
-  const { isLoading: isConfirmingDeposit, isSuccess: isDepositSuccess, isError: isDepositError } = useWaitForTransactionReceipt({
+  const {
+    isLoading: isConfirmingDeposit,
+    isSuccess: isDepositSuccess,
+    isError: isDepositError,
+  } = useWaitForTransactionReceipt({
     hash: depositTxHash,
-    query: {
-      enabled: Boolean(depositTxHash),
+    query: { enabled: Boolean(depositTxHash) },
+  })
+
+  const { writeContractAsync: deposit, isPending: isDepositing } = useWriteContract()
+
+  // Poll USDC API after ETH deposit confirmed on-chain
+  const depositStatusQuery = useQuery({
+    queryKey: ["usdc-deposit-status", depositTxHash],
+    queryFn: () => fetchDepositStatus(depositTxHash!),
+    enabled: Boolean(depositTxHash) && isDepositSuccess,
+    refetchInterval: (q) => {
+      const s = q.state.data?.status
+      return s === "completed" || s === "failed" || s === "invalid" ? false : 5_000
     },
-  });
+  })
 
-  const { writeContractAsync: deposit, isPending: isDepositing } =
-    useWriteContract()
+  // Poll Rust backend status (Fast Bridge only, after initiation)
+  const statusQuery = useQuery({
+    queryKey: ["bridge-status", requestId],
+    queryFn: () => fetchStatus(requestId as string),
+    enabled: Boolean(requestId) && bridgeMode === "fast" && fastBridgeInitiated,
+    refetchInterval: (q) => {
+      const s = q.state.data?.status
+      if (!s) return 1_000
+      return s === "completed" || s === "failed" ? false : 1_000
+    },
+  })
 
-  const handleSimpleBridge = async () => {
-    const value = BigInt(amount * 1e6)
-    try {
-      const approveHash = await approve({
-        address: ETH_USDC_CONTRACT,
-        abi: ERC20_ABI,
-        functionName: "approve",
-        args: [X_RESERVE_CONTRACT, value],
-      })
-      console.log("Approval tx hash:", approveHash)
-      setRequestId(approveHash) // Show progress early
-      setActiveStep(4)
-
-      // The useEffect below will handle the deposit after confirmation
-    } catch (e) {
-      console.error("Approval failed", e)
-      // Optionally reset state or show an error message
-    }
-  }
-
-  // Effect to trigger deposit after approval is confirmed
+  // Trigger deposit after approval confirmed
   useEffect(() => {
     const executeDeposit = async () => {
-      if (approveTxHash && !isConfirmingApproval && !isDepositing && !depositInitiated) {
-        setDepositInitiated(true) // Set to true to prevent re-execution
-        const value = BigInt(amount * 1e6)
+      if (isApprovalSuccess && !depositInitiated && !depositTxHash) {
+        setDepositInitiated(true)
+        const baseValue = BigInt(Math.round(amount * 1e6))
+        // Fast Bridge includes 2 USDC fee in the deposit
+        const depositValue =
+          bridgeMode === "fast" ? baseValue + BigInt(2_000_000) : baseValue
         const remoteRecipient = bytes32FromBytes(
           remoteRecipientCoder.encode(effectiveStacksAddress)
         )
         try {
-          console.log("✅ Approval confirmed, now depositing...")
+          console.log("✅ Approval confirmed, depositing to xReserve...")
           const depositHash = await deposit({
             address: X_RESERVE_CONTRACT,
             abi: X_RESERVE_ABI,
             functionName: "depositToRemote",
-            args: [value, 10003, remoteRecipient, ETH_USDC_CONTRACT, BigInt(0), "0x"],
+            args: [depositValue, 10003, remoteRecipient, ETH_USDC_CONTRACT, BigInt(0), "0x"],
           })
           console.log("Deposit tx hash:", depositHash)
           setRequestId(depositHash)
-          setDepositTxHash(depositHash);
-        } catch (e) {
+          setDepositTxHash(depositHash)
+
+          // Register with backend so it can match the Circle deposit and distribute
+          if (bridgeMode === "fast") {
+            mutation.mutate({
+              amount,
+              mode: "fast",
+              autoDeploy,
+              referrerCode: hasReferral ? referrerCode.trim() : undefined,
+              ethAddress: effectiveEthAddress,
+              stacksAddress: userStacksRecipient,
+              depositTxHash: depositHash,
+            })
+          }
+        } catch (e: unknown) {
           console.error("Deposit failed", e)
-          setDepositInitiated(false) // Reset on error to allow retry
+          const msg = e instanceof Error ? e.message : String(e)
+          // User rejected — keep depositInitiated=true so the effect doesn't loop
+          setDepositError(msg.toLowerCase().includes("user rejected") || msg.toLowerCase().includes("denied")
+            ? "Transaction cancelled"
+            : msg)
         }
       }
     }
 
-    if (activeStep === 4 && !selected) {
+    if (activeStep === 4) {
       executeDeposit()
     }
   }, [
-    selected,
     approveTxHash,
-    isConfirmingApproval,
+    isApprovalSuccess,
     isDepositing,
     amount,
     deposit,
     effectiveStacksAddress,
     activeStep,
-    depositInitiated, // Add depositInitiated to dependencies
+    depositInitiated,
+    depositTxHash,
+    bridgeMode,
   ])
 
-  // Queries
-  const statusQuery = useQuery({
-    queryKey: ["bridge-status", requestId],
-    queryFn: () => fetchStatus(requestId as string),
-    enabled: Boolean(requestId) && Boolean(selected),
-    refetchInterval: (q) => {
-      const s = q.state.data?.status
-      if (!s) return 1_000
-      return s === "registered" || s === "failed" ? false : 1_000
-    },
-  })
-
-    // Status mapping variables
-    let currentStepApprove: "pending" | "active" | "done" | "error";
-    let currentStepAttest: "pending" | "active" | "done" | "error";
-    let currentStepRegister: "pending" | "active" | "done" | "error"; // Only applicable for complex bridge
-
-    if (selected) {
-        const complexBridgeStatus = statusQuery.data?.status || (requestId ? "initiated" : null);
-        // Complex bridge logic
-        currentStepApprove = complexBridgeStatus ? "done" : "pending";
-        currentStepAttest = complexBridgeStatus === "attesting" ? "active" :
-                             complexBridgeStatus === "registered" ? "done" :
-                             complexBridgeStatus === "failed" ? "error" : "pending";
-        currentStepRegister = complexBridgeStatus === "registered" ? "done" :
-                              complexBridgeStatus === "failed" ? "error" :
-                              complexBridgeStatus === "initiated" || complexBridgeStatus === "attesting" ? "active" : "pending";
-    } else {
-        // Simple bridge logic (Ethereum only)
-        // Step 1: Approval
-        if (!approveTxHash) {
-            currentStepApprove = "pending";
-        } else if (isApproving || isConfirmingApproval) {
-            currentStepApprove = "active";
-        } else if (isApprovalSuccess) {
-            currentStepApprove = "done";
-        } else if (isApprovalError) {
-            currentStepApprove = "error";
-        } else {
-            currentStepApprove = "pending"; // Fallback
-        }
-
-        // Step 2: Deposit
-        if (!depositTxHash) {
-            currentStepAttest = "pending";
-        } else if (isDepositing || isConfirmingDeposit) {
-            currentStepAttest = "active";
-        } else if (isDepositSuccess) {
-            currentStepAttest = "done";
-        } else if (isDepositError) {
-            currentStepAttest = "error";
-        } else {
-            currentStepAttest = "pending"; // Fallback
-        }
-        currentStepRegister = "pending"; // Not applicable for simple bridge
+  // Trigger Fast Bridge backend call as soon as ETH deposit confirms on-chain
+  useEffect(() => {
+    if (
+      bridgeMode === "fast" &&
+      isDepositSuccess &&
+      !fastBridgeInitiated &&
+      depositTxHash
+    ) {
+      setFastBridgeInitiated(true)
+      mutation.mutate({
+        amount,
+        mode: "fast",
+        targetProtocol: selected?.name,
+        autoDeploy,
+        referrerCode: hasReferral ? referrerCode.trim() : undefined,
+        ethAddress: effectiveEthAddress,
+        stacksAddress: userStacksRecipient,
+        depositTxHash,
+      })
     }
+  }, [
+    bridgeMode,
+    isDepositSuccess,
+    fastBridgeInitiated,
+    depositTxHash,
+    amount,
+    selected,
+    autoDeploy,
+    referrerCode,
+    hasReferral,
+    effectiveEthAddress,
+    userStacksRecipient,
+  ])
 
-  // Step Validation
-  const isStep1Valid = wallet.isEthConnected && wallet.isStacksConnected
+  // --- Status pill states ---
+  let pillApprove: "pending" | "active" | "done" | "error"
+  if (!approveTxHash) {
+    pillApprove = "pending"
+  } else if (isApproving || isConfirmingApproval) {
+    pillApprove = "active"
+  } else if (isApprovalSuccess) {
+    pillApprove = "done"
+  } else if (isApprovalError) {
+    pillApprove = "error"
+  } else {
+    pillApprove = "pending"
+  }
 
-  const isAmountExceedingBalance = useMemo(() => {
-    return amount > usdcBalance
-  }, [amount, usdcBalance])
+  let pillDeposit: "pending" | "active" | "done" | "error"
+  if (!depositTxHash) {
+    pillDeposit = isApprovalSuccess ? "active" : "pending"
+  } else if (isDepositing || isConfirmingDeposit) {
+    pillDeposit = "active"
+  } else if (isDepositSuccess) {
+    pillDeposit = "done"
+  } else if (isDepositError) {
+    pillDeposit = "error"
+  } else {
+    pillDeposit = "pending"
+  }
+
+  const usdcStatus = depositStatusQuery.data?.status
+  let pillConfirmed: "pending" | "active" | "done" | "error"
+  if (!isDepositSuccess) {
+    pillConfirmed = "pending"
+  } else if (usdcStatus === "completed") {
+    pillConfirmed = "done"
+  } else if (usdcStatus === "invalid" || usdcStatus === "failed") {
+    pillConfirmed = "error"
+  } else {
+    pillConfirmed = "active"
+  }
+
+  let pillDistributing: "pending" | "active" | "done" | "error" = "pending"
+  if (fastBridgeInitiated) {
+    if (statusQuery.data?.status === "completed") {
+      pillDistributing = "done"
+    } else if (statusQuery.data?.status === "failed") {
+      pillDistributing = "error"
+    } else {
+      pillDistributing = "active"
+    }
+  }
+
+  const isBridgeComplete =
+    bridgeMode === "fast"
+      ? statusQuery.data?.status === "completed"
+      : usdcStatus === "completed"
+
+  // --- Step validation ---
+  const isAmountExceedingBalance = useMemo(() => amount > usdcBalance, [amount, usdcBalance])
 
   const isStep2Valid = useMemo(() => {
-    const ethBalanceNumber = ethBalance
-      ? parseFloat(ethBalance.split(" ")[0])
-      : 0
-    return amount > 0 && !isAmountExceedingBalance && ethBalanceNumber > 0.01
-  }, [amount, isAmountExceedingBalance, ethBalance])
+    const isFeeOk = bridgeMode === "simple" || !insufficientFastBridgeFunds
+    return (
+      amount > 0 &&
+      !isAmountExceedingBalance &&
+      isStacksRecipientValid &&
+      isFeeOk
+    )
+  }, [
+    amount,
+    isAmountExceedingBalance,
+    bridgeMode,
+    insufficientFastBridgeFunds,
+    isStacksRecipientValid,
+  ])
 
-  const bridgeSteps = useMemo(() => {
-    if (selected) {
-      return [
-        {
-          id: "step-1",
-          title: "Connect Wallets",
-          description: "Ethereum & Stacks",
-        },
-        {
-          id: "step-2",
-          title: "Bridge Details",
-          description: "Amount & Protocol",
-        },
-        {
-          id: "step-3",
-          title: "Review & Approve",
-          description: "Confirm Transaction",
-        },
-        {
-          id: "step-4",
-          title: "Confirm Bridge",
-          description: "Track Progress",
-        },
-      ]
-    } else {
-      // Simple Bridge: no protocol selected
-      return [
-        {
-          id: "step-1",
-          title: "Connect Wallets",
-          description: "Ethereum & Stacks",
-        },
-        {
-          id: "step-2",
-          title: "Bridge Details",
-          description: "Amount",
-        },
-        {
-          id: "step-3",
-          title: "Approve & Bridge",
-          description: "Confirm Transaction",
-        },
-      ]
-    }
-  }, [selected])
+  const bridgeSteps = [
+    { id: "step-1", title: "Connect Wallets", description: "Ethereum & Stacks" },
+    {
+      id: "step-2",
+      title: "Bridge Details",
+      description: bridgeMode === "fast" ? "Mode, Amount & Address" : "Amount & Address",
+    },
+    { id: "step-3", title: "Review & Approve", description: "Confirm Transaction" },
+    { id: "step-4", title: "Bridge & Track", description: "Track Progress" },
+  ]
 
   if (!isMounted) {
     return (
@@ -378,9 +468,42 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
 
   const isBridging = isApproving || isConfirmingApproval || isDepositing
 
+  const handleBridge = async () => {
+    const baseValue = BigInt(Math.round(amount * 1e6))
+    // Fast Bridge approval covers amount + 2 USDC fee
+    const approveValue = bridgeMode === "fast" ? baseValue + BigInt(2_000_000) : baseValue
+    try {
+      const approveHash = await approve({
+        address: ETH_USDC_CONTRACT,
+        abi: ERC20_ABI,
+        functionName: "approve",
+        args: [X_RESERVE_CONTRACT, approveValue],
+      })
+      console.log("Approval tx hash:", approveHash)
+      setActiveStep(4)
+    } catch (e) {
+      console.error("Approval failed", e)
+    }
+  }
+
+  const handleReset = () => {
+    setActiveStep(1)
+    setRequestId(null)
+    setAmountInput("10")
+    setDepositInitiated(false)
+    setDepositTxHash(undefined)
+    setFastBridgeInitiated(false)
+    setDepositError(null)
+  }
+
+  const handleRetryDeposit = () => {
+    setDepositError(null)
+    setDepositInitiated(false)
+  }
+
   return (
     <div className={cn("mx-auto w-full max-w-5xl", className)}>
-      <Stepper step={activeStep} onStepChange={setActiveStep} numberOfSteps={4}>
+      <Stepper step={activeStep} onStepChange={setActiveStep} numberOfSteps={4} disableForwardNav>
         <div className="grid gap-8 lg:grid-cols-[280px_1fr]">
           {/* Sidebar Triggers */}
           <nav className="flex flex-col gap-2">
@@ -394,31 +517,21 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
                   key={step.id}
                   step={stepNum}
                   className={cn(
-                    `flex w-full items-center gap-4 rounded-lg border p-4
-                    text-left transition-colors`,
-                    isActive
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:bg-muted/50",
+                    "flex w-full items-center gap-4 rounded-lg border p-4 text-left transition-colors",
+                    isActive ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50",
                     isCompleted && "border-primary/50 text-muted-foreground"
                   )}
                 >
                   <div
                     className={cn(
-                      `flex h-8 w-8 shrink-0 items-center justify-center
-                      rounded-full border text-sm font-bold`,
+                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm font-bold",
                       isActive
                         ? "border-primary bg-primary text-primary-foreground"
-                        : `border-muted-foreground/30 bg-background
-                          text-muted-foreground`,
-                      isCompleted &&
-                        "border-primary/50 bg-primary/20 text-primary"
+                        : "border-muted-foreground/30 bg-background text-muted-foreground",
+                      isCompleted && "border-primary/50 bg-primary/20 text-primary"
                     )}
                   >
-                    {isCompleted ? (
-                      <CheckCircle2 className="h-5 w-5" />
-                    ) : (
-                      stepNum
-                    )}
+                    {isCompleted ? <CheckCircle2 className="h-5 w-5" /> : stepNum}
                   </div>
                   <div className="flex flex-col">
                     <span
@@ -429,9 +542,7 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
                     >
                       {step.title}
                     </span>
-                    <span className="text-xs text-muted-foreground">
-                      {step.description}
-                    </span>
+                    <span className="text-xs text-muted-foreground">{step.description}</span>
                   </div>
                 </StepperTrigger>
               )
@@ -444,9 +555,7 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
               {/* Step 1: Connect Wallets */}
               <StepperStep step={1}>
                 <div className="space-y-6">
-                  <div
-                    className="rounded-lg border border-border bg-card/50 p-6"
-                  >
+                  <div className="rounded-lg border border-border bg-card/50 p-6">
                     <WalletPanel
                       ethAddress={wallet.ethAddress}
                       isEthConnected={wallet.isEthConnected}
@@ -463,19 +572,19 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
                   <div className="flex justify-end">
                     <Button
                       onClick={() => setActiveStep(2)}
-                      disabled={!isStep1Valid}
+                      disabled={!wallet.isEthConnected}
                     >
                       Continue
                       <ChevronRight className="ml-2 h-4 w-4" />
                     </Button>
                   </div>
-                  {!isStep1Valid && (
+                  {!wallet.isEthConnected && (
                     <Typography
                       variant="caption"
                       textColor="muted-foreground"
                       className="block text-right"
                     >
-                      Connect both wallets to proceed
+                      Connect your Ethereum wallet to proceed
                     </Typography>
                   )}
                 </div>
@@ -484,16 +593,42 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
               {/* Step 2: Bridge Details */}
               <StepperStep step={2}>
                 <div className="space-y-6">
-                  <div
-                    className="grid gap-6 rounded-lg border border-border
-                      bg-card/50 p-6"
-                  >
+                  <div className="grid gap-6 rounded-lg border border-border bg-card/50 p-6">
+
+                    {/* Bridge Mode Toggle */}
+                    <div className="space-y-2">
+                      <Typography variant="caption" textColor="muted-foreground">
+                        Bridge Mode
+                      </Typography>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button
+                          variant={bridgeMode === "fast" ? "default" : "outline"}
+                          size="sm"
+                          type="button"
+                          onClick={() => setBridgeMode("fast")}
+                        >
+                          Fast Bridge
+                        </Button>
+                        <Button
+                          variant={bridgeMode === "simple" ? "default" : "outline"}
+                          size="sm"
+                          type="button"
+                          onClick={() => setBridgeMode("simple")}
+                        >
+                          Simple Bridge
+                        </Button>
+                      </div>
+                      <Typography variant="caption" textColor="muted-foreground">
+                        {bridgeMode === "fast"
+                          ? "2 USDCx fee · We send to your wallet"
+                          : "No fee · Circle mints directly"}
+                      </Typography>
+                    </div>
+
+                    {/* Amount + Protocol */}
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-1">
-                        <Typography
-                          variant="caption"
-                          textColor="muted-foreground"
-                        >
+                        <Typography variant="caption" textColor="muted-foreground">
                           Amount (USDC)
                         </Typography>
                         <div className="relative">
@@ -512,93 +647,171 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
                             variant="ghost"
                             size="sm"
                             className="absolute right-1 top-1/2 -translate-y-1/2"
-                            onClick={() =>
-                              setAmountInput(usdcBalance?.toString() ?? "0")
-                            }
+                            onClick={() => setAmountInput(usdcBalance?.toString() ?? "0")}
                             disabled={usdcBalance === null}
                           >
                             Max
                           </Button>
                         </div>
                         <div className="flex justify-between">
-                          <Typography
-                            variant="caption"
-                            textColor="muted-foreground"
-                          >
+                          <Typography variant="caption" textColor="muted-foreground">
                             Balance: {usdcBalance?.toFixed(2) ?? "..."} USDC
                           </Typography>
-                          <Typography
-                            variant="caption"
-                            textColor="muted-foreground"
-                          >
+                          <Typography variant="caption" textColor="muted-foreground">
                             {ethBalance ?? "..."}
                           </Typography>
                         </div>
-                        <Typography
-                          variant="caption"
-                          textColor="muted-foreground"
-                        >
-                          Rewards vest linearly over ~90 days
-                        </Typography>
-                      </div>
 
-                      <ProtocolSelector
-                        value={selected?.name ?? null}
-                        onValueChange={(o: Opportunity | null) => setSelected(o)}
-                      />
-                    </div>
-
-                    {selected && (
-                      <>
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div className="space-y-1">
-                            <Typography
-                              variant="caption"
-                              textColor="muted-foreground"
-                            >
-                              Auto-deploy to protocol
-                            </Typography>
-                            <div className="grid grid-cols-2 gap-2">
-                              <Button
-                                variant={autoDeploy ? "default" : "outline"}
-                                size="sm"
-                                textVariant="caption"
-                                textWeight="bold"
-                                onClick={() => setAutoDeploy(true)}
-                                type="button"
-                              >
-                                ON (+30%)
-                              </Button>
-                              <Button
-                                variant={!autoDeploy ? "default" : "outline"}
-                                size="sm"
-                                textVariant="caption"
-                                textWeight="bold"
-                                onClick={() => setAutoDeploy(false)}
-                                type="button"
-                              >
-                                OFF
-                              </Button>
+                        {/* Fee breakdown (Fast Bridge only) */}
+                        {bridgeMode === "fast" && amount > 0 && (
+                          <div className="mt-2 rounded-md border border-border bg-muted/20 p-3 space-y-1 text-xs">
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Bridge amount</span>
+                              <span>{amount.toFixed(2)} USDC</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Service fee</span>
+                              <span>2.00 USDC</span>
+                            </div>
+                            <div className="flex justify-between font-medium border-t border-border pt-1">
+                              <span className="text-muted-foreground">You receive</span>
+                              <span>{amount.toFixed(2)} USDCx on Stacks</span>
                             </div>
                           </div>
+                        )}
 
-                          <div className="space-y-1">
-                            <Typography
-                              variant="caption"
-                              textColor="muted-foreground"
-                            >
-                              Referral code (optional)
+                        {/* Insufficient funds error */}
+                        {bridgeMode === "fast" && insufficientFastBridgeFunds && (
+                          <Typography variant="caption" className="text-destructive block">
+                            Insufficient USDC (need {(amount + 2).toFixed(2)} USDC)
+                          </Typography>
+                        )}
+                      </div>
+
+                      {/* Protocol selector: Fast Bridge only, optional */}
+                      {bridgeMode === "fast" && (
+                        <div className="space-y-1">
+                          <Typography variant="caption" textColor="muted-foreground">
+                            Optional: Invest after bridge
+                          </Typography>
+                          <ProtocolSelector
+                            value={selected?.name ?? null}
+                            onValueChange={(o: Opportunity | null) => setSelected(o)}
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Stacks Address Toggle */}
+                    <div className="space-y-2">
+                      <Typography variant="caption" textColor="muted-foreground">
+                        Stacks Recipient
+                      </Typography>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button
+                          variant={stacksAddressMode === "wallet" ? "default" : "outline"}
+                          size="sm"
+                          type="button"
+                          onClick={() => setStacksAddressMode("wallet")}
+                        >
+                          Connected Wallet
+                        </Button>
+                        <Button
+                          variant={stacksAddressMode === "custom" ? "default" : "outline"}
+                          size="sm"
+                          type="button"
+                          onClick={() => setStacksAddressMode("custom")}
+                        >
+                          Custom Address
+                        </Button>
+                      </div>
+                      {stacksAddressMode === "wallet" && (
+                        <div className="flex items-center justify-between">
+                          <Typography variant="caption" textColor="muted-foreground">
+                            {wallet.stacksAddress
+                              ? `${wallet.stacksAddress.slice(0, 8)}...${wallet.stacksAddress.slice(-4)}`
+                              : "No Stacks wallet connected"}
+                          </Typography>
+                          {isStacksRecipientValid && (
+                            <Typography variant="caption" textColor="muted-foreground">
+                              {stacksUsdcxBalance !== null
+                                ? `${stacksUsdcxBalance.toFixed(2)} USDCx`
+                                : "..."}
                             </Typography>
-                            <Input
-                              value={referrerCode}
-                              onChange={(e) =>
-                                setReferrerCode(e.target.value)
-                              }
-                              placeholder="e.g. BUILDER123"
-                            />
+                          )}
+                        </div>
+                      )}
+                      {stacksAddressMode === "custom" && (
+                        <div className="space-y-1">
+                          <Input
+                            value={customStacksAddress}
+                            onChange={(e) => setCustomStacksAddress(e.target.value)}
+                            placeholder="ST... or SP..."
+                            className={cn(
+                              !isStacksRecipientValid &&
+                                customStacksAddress.length > 0 &&
+                                "border-destructive"
+                            )}
+                          />
+                          {!isStacksRecipientValid && customStacksAddress.length > 0 && (
+                            <Typography variant="caption" className="text-destructive">
+                              Invalid Stacks address format
+                            </Typography>
+                          )}
+                          {isStacksRecipientValid && customStacksAddress.length > 0 && (
+                            <div className="flex justify-end">
+                              <Typography variant="caption" textColor="muted-foreground">
+                                {stacksUsdcxBalance !== null
+                                  ? `${stacksUsdcxBalance.toFixed(2)} USDCx`
+                                  : "..."}
+                              </Typography>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Auto-deploy + referral (Fast Bridge + protocol selected) */}
+                    {bridgeMode === "fast" && selected && (
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-1">
+                          <Typography variant="caption" textColor="muted-foreground">
+                            Auto-deploy to protocol
+                          </Typography>
+                          <div className="grid grid-cols-2 gap-2">
+                            <Button
+                              variant={autoDeploy ? "default" : "outline"}
+                              size="sm"
+                              textVariant="caption"
+                              textWeight="bold"
+                              onClick={() => setAutoDeploy(true)}
+                              type="button"
+                            >
+                              ON (+30%)
+                            </Button>
+                            <Button
+                              variant={!autoDeploy ? "default" : "outline"}
+                              size="sm"
+                              textVariant="caption"
+                              textWeight="bold"
+                              onClick={() => setAutoDeploy(false)}
+                              type="button"
+                            >
+                              OFF
+                            </Button>
                           </div>
                         </div>
-                      </>
+                        <div className="space-y-1">
+                          <Typography variant="caption" textColor="muted-foreground">
+                            Referral code (optional)
+                          </Typography>
+                          <Input
+                            value={referrerCode}
+                            onChange={(e) => setReferrerCode(e.target.value)}
+                            placeholder="e.g. BUILDER123"
+                          />
+                        </div>
+                      </div>
                     )}
                   </div>
 
@@ -606,10 +819,7 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
                     <Button variant="outline" onClick={() => setActiveStep(1)}>
                       Back
                     </Button>
-                    <Button
-                      onClick={() => setActiveStep(3)}
-                      disabled={!isStep2Valid}
-                    >
+                    <Button onClick={() => setActiveStep(3)} disabled={!isStep2Valid}>
                       Continue
                       <ChevronRight className="ml-2 h-4 w-4" />
                     </Button>
@@ -620,7 +830,11 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
                       textColor="muted-foreground"
                       className="block text-right"
                     >
-                      Please check your balance or enter a valid amount
+                      {bridgeMode === "fast" && insufficientFastBridgeFunds
+                        ? `Need ${(amount + 2).toFixed(2)} USDC (amount + 2 fee)`
+                        : !isStacksRecipientValid
+                        ? "Enter a valid Stacks address"
+                        : "Please check your balance or enter a valid amount"}
                     </Typography>
                   )}
                 </div>
@@ -630,41 +844,51 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
               <StepperStep step={3}>
                 <div className="space-y-6">
                   <div className="grid gap-6 md:grid-cols-2">
-                    <div
-                      className="space-y-4 rounded-lg border border-border
-                        bg-card/50 p-6"
-                    >
+                    <div className="space-y-4 rounded-lg border border-border bg-card/50 p-6">
                       <Typography variant="h6" family="head" weight="bold">
                         Transaction Summary
                       </Typography>
 
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
+                          <span className="text-muted-foreground">Bridge Mode</span>
+                          <span className="font-medium">
+                            {bridgeMode === "fast"
+                              ? "Fast Bridge (2 USDCx fee)"
+                              : "Simple Bridge (no fee)"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
                           <span className="text-muted-foreground">Amount</span>
                           <span className="font-medium">{amount} USDC</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-muted-foreground">
-                            Target Protocol
-                          </span>
+                          <span className="text-muted-foreground">Service Fee</span>
                           <span className="font-medium">
-                            {selected?.name || "Bridge"}
+                            {bridgeMode === "fast" ? "2.00 USDC" : "None"}
                           </span>
                         </div>
-                        {selected && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Stacks Recipient</span>
+                          <span className="font-mono text-xs font-medium">
+                            {userStacksRecipient.slice(0, 8)}...
+                            {userStacksRecipient.slice(-4)}
+                          </span>
+                        </div>
+                        {bridgeMode === "fast" && selected && (
                           <>
                             <div className="flex justify-between">
-                              <span className="text-muted-foreground">
-                                Auto-Deploy
-                              </span>
+                              <span className="text-muted-foreground">Invest in Protocol</span>
+                              <span className="font-medium">{selected.name}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Auto-Deploy</span>
                               <span className="font-medium">
                                 {autoDeploy ? "Enabled" : "Disabled"}
                               </span>
                             </div>
                             <div className="flex justify-between">
-                              <span className="text-muted-foreground">
-                                Referral
-                              </span>
+                              <span className="text-muted-foreground">Referral</span>
                               <span className="font-medium">
                                 {hasReferral ? referrerCode : "None"}
                               </span>
@@ -672,25 +896,22 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
                           </>
                         )}
                         <div className="flex justify-between">
-                          <span className="text-muted-foreground">
-                            Estimated Time
+                          <span className="text-muted-foreground">Estimated Time</span>
+                          <span className="font-medium">
+                            {bridgeMode === "fast" ? "~1 minute" : "~15 minutes"}
                           </span>
-                          <span className="font-medium">average 15 minutes</span>
                         </div>
                       </div>
 
                       <div className="border-t border-border pt-4">
-                        <Typography
-                          variant="caption"
-                          textColor="muted-foreground"
-                        >
+                        <Typography variant="caption" textColor="muted-foreground">
                           Wallet: {effectiveEthAddress.slice(0, 6)}...
                           {effectiveEthAddress.slice(-4)}
                         </Typography>
                       </div>
                     </div>
 
-                    {selected ? (
+                    {bridgeMode === "fast" && selected ? (
                       <RewardPreview
                         amount={amount}
                         autoDeploy={autoDeploy}
@@ -698,36 +919,15 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
                         userTotalBridged={0}
                         className="w-full"
                       />
-                    ) : (
-                      null
-                    )}
+                    ) : null}
                   </div>
 
                   <div className="flex justify-between">
                     <Button variant="outline" onClick={() => setActiveStep(2)}>
                       Back
                     </Button>
-                    <Button
-                      onClick={() => {
-                        if (selected) {
-                          mutation.mutate({
-                            amount,
-                            targetProtocol: selected.name,
-                            autoDeploy,
-                            referrerCode: hasReferral
-                              ? referrerCode.trim()
-                              : undefined,
-                            ethAddress: effectiveEthAddress,
-                            stacksAddress: effectiveStacksAddress,
-                          })
-                        } else {
-                          handleSimpleBridge()
-                        }
-                      }}
-                      disabled={mutation.isPending || isBridging}
-                      size="lg"
-                    >
-                      {mutation.isPending || isBridging ? (
+                    <Button onClick={handleBridge} disabled={isBridging} size="lg">
+                      {isBridging ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                           {isConfirmingApproval ? "Confirming..." : "Initiating..."}
@@ -751,112 +951,127 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
                 </div>
               </StepperStep>
 
-              {/* c: Confirm Bridge */}
+              {/* Step 4: Bridge & Track */}
               <StepperStep step={4}>
                 <div className="space-y-6">
-                  <div
-                    className="rounded-lg border border-border bg-card/50 p-6"
-                  >
-                    <div
-                      className="mb-6 flex items-center justify-between gap-3"
-                    >
+                  <div className="rounded-lg border border-border bg-card/50 p-6">
+                    <div className="mb-6 flex items-center justify-between gap-3">
                       <Typography variant="h6" family="head" weight="bold">
                         Bridge Status
                       </Typography>
-                      {requestId && (
-                        <Typography
-                          variant="caption"
-                          textColor="muted-foreground"
-                        >
-                          ID: {requestId.slice(0, 8)}
+                      {depositTxHash && (
+                        <Typography variant="caption" textColor="muted-foreground">
+                          ID: {depositTxHash.slice(0, 8)}
                         </Typography>
                       )}
                     </div>
 
-                    {!requestId ? (
-                      <div className="py-8 text-center text-muted-foreground">
-                        Waiting for transaction initiation...
-                      </div>
-                    ) : (
-                      <div className="space-y-6">
-                        <div className="grid gap-3 md:grid-cols-3">
-                          <StatusPill label="Initiated" status={currentStepApprove} />
-                          <StatusPill label="Attesting" status={currentStepAttest} />
-                          {selected && (
-                            <StatusPill
-                              label="Register on Stacks"
-                              status={currentStepRegister}
-                            />
-                          )}
-                        </div>
-
-                        <div className="space-y-2 border-t border-border pt-4">
-                          {(statusQuery.data?.ethTxHash || approveTxHash || depositTxHash) && (
-                            <>
-                              <div
-                                className="flex items-center justify-between
-                                  text-sm"
-                              >
-                                <span className="text-muted-foreground">
-                                  Ethereum Tx
-                                </span>
-                                <a
-                                  href={`https://sepolia.etherscan.io/tx/${statusQuery.data?.ethTxHash || depositTxHash || approveTxHash}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="font-mono text-primary
-                                    hover:underline"
-                                >
-                                  {(statusQuery.data?.ethTxHash || depositTxHash || approveTxHash)?.slice(0, 18)}...
-                                </a>
-                              </div>
-                              <Typography
-                                variant="caption"
-                                textColor="muted-foreground"
-                                className="block text-center mt-2"
-                              >
-                                USDC will come after an average of 15 minutes.
-                              </Typography>
-                            </>
-                          )}
-                          {statusQuery.data?.stacksTxId && (
-                            <div
-                              className="flex items-center justify-between
-                                text-sm"
-                            >
-                              <span className="text-muted-foreground">
-                                . Stacks Tx
-                              </span>
-                              <a
-                                href={`https://explorer.stacks.co/txid/${statusQuery.data.stacksTxId}?chain=testnet`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="font-mono text-primary
-                                  hover:underline"
-                              >
-                                {statusQuery.data.stacksTxId.slice(0, 18)}...
-                              </a>
-                            </div>
-                          )}
-                        </div>
+                    {/* Invalid deposit error */}
+                    {usdcStatus === "invalid" && (
+                      <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 p-4">
+                        <Typography variant="caption" className="text-destructive">
+                          Deposit flagged invalid by Circle. Please contact support.
+                        </Typography>
                       </div>
                     )}
+
+                    <div className="space-y-6">
+                      {/* Status Pills */}
+                      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+                        <StatusPill label="ETH Approved" status={pillApprove} />
+                        <StatusPill label="ETH Deposited" status={pillDeposit} />
+                        {bridgeMode === "fast" ? (
+                          <StatusPill label="USDCx Distributing" status={pillDistributing} />
+                        ) : (
+                          <StatusPill
+                            label="Complete"
+                            status={usdcStatus === "completed" ? "done" : "pending"}
+                          />
+                        )}
+                      </div>
+
+                      {/* TX Links */}
+                      <div className="space-y-2 border-t border-border pt-4">
+                        {(depositTxHash || approveTxHash) && (
+                          <>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-muted-foreground">Ethereum Tx</span>
+                              <a
+                                href={`https://sepolia.etherscan.io/tx/${depositTxHash || approveTxHash}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="font-mono text-primary hover:underline"
+                              >
+                                {(depositTxHash || approveTxHash)?.slice(0, 18)}...
+                              </a>
+                            </div>
+                            <Typography
+                              variant="caption"
+                              textColor="muted-foreground"
+                              className="block text-center mt-2"
+                            >
+                              USDC will arrive after an average of 15 minutes.
+                            </Typography>
+                          </>
+                        )}
+                        {statusQuery.data?.stacksTxId && (
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">Stacks Tx</span>
+                            <a
+                              href={`https://explorer.stacks.co/txid/${statusQuery.data.stacksTxId}?chain=testnet`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="font-mono text-primary hover:underline"
+                            >
+                              {statusQuery.data.stacksTxId.slice(0, 18)}...
+                            </a>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Protocol CTA (Fast Bridge, after complete, protocol selected) */}
+                      {bridgeMode === "fast" && isBridgeComplete && selected && (
+                        <div className="rounded-md border border-primary/30 bg-primary/5 p-4">
+                          <Typography variant="p1" weight="medium" className="mb-1">
+                            Your {amount} USDCx is in your wallet.
+                          </Typography>
+                          <Typography variant="caption" textColor="muted-foreground">
+                            Earn {(selected as any).apy ?? "~"}% APY on {selected.name} →
+                          </Typography>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="flex justify-center">
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        // Reset form
-                        setActiveStep(1)
-                        setRequestId(null)
-                        setAmountInput("1000")
-                        setDepositInitiated(false) // Reset deposit initiated flag
-                      }}
-                    >
-                      Start New Bridge
-                    </Button>
-                  </div>
+                  {depositError && (
+                    <div className="rounded-md border border-destructive/30 bg-destructive/5 p-4 space-y-3">
+                      <Typography variant="caption" className="text-destructive block">
+                        {depositError}
+                      </Typography>
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={handleRetryDeposit}>
+                          Retry Deposit
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={handleReset}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {!depositError && (
+                    <div className="flex justify-center gap-3">
+                      {usdcStatus === "invalid" ? (
+                        <Button variant="outline" onClick={handleReset}>
+                          Start Over
+                        </Button>
+                      ) : (
+                        <Button variant="outline" onClick={handleReset}>
+                          Start New Bridge
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </StepperStep>
             </StepperContent>
