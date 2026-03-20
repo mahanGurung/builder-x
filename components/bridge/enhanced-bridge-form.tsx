@@ -1010,7 +1010,7 @@ export function EnhancedBridgeForm({ className }: { className?: string }) {
                               textColor="muted-foreground"
                               className="block text-center mt-2"
                             >
-                              USDC will arrive after an average of 15 minutes.
+                              USDC will arrive after an average of {bridgeMode === "fast" ? "1 minute" : "15 minutes"}.
                             </Typography>
                           </>
                         )}
